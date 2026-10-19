@@ -297,9 +297,54 @@ como JSON compacto (`deploy.yml`).
 | `otlp_grpc_endpoint`, `otlp_http_endpoint` | os 4 serviços | `null` com a observabilidade desligada |
 | `otlp_vpc_endpoint` | Lambdas do `mechanical-hub-auth` | Listener OTLP no NLB |
 
+## Pipeline única (deploy completo)
+
+O ambiente inteiro sobe com **um único disparo**: Actions → **Deploy completo**
+(`deploy-all.yml`) → *Run workflow*. Ela encadeia, com `needs:`, o `deploy.yml`
+de cada repositório (reusable workflows, `workflow_call`):
+
+```
+infra → database → [orders, billing, stock, orchestrator] (paralelo) → auth
+```
+
+| Input | Valores | Efeito |
+| --- | --- | --- |
+| `environment` | `production` (padrão), `staging` | Repassado a `infra` e `database` |
+| `ate_etapa` | `infra`, `database`, `auth` (padrão) | Última etapa executada; as seguintes são puladas |
+| `criar_usuarios_e_role` | `false` (padrão) | Cria a role de banco da autenticação no `database` (só depois das migrations V18..V20 do orders) |
+
+- Se uma etapa falha ou é cancelada, as seguintes **não** rodam.
+- `concurrency: deploy-all` (sem cancelamento) impede dois deploys completos ao mesmo tempo.
+- Os `deploy.yml` de `infra`, `database` e `auth` **não rodam mais no push para `main`**;
+  continuam disponíveis em *Run workflow* para rodar uma etapa isolada.
+- Os repositórios são chamados por `uses: mechanical-hub-fiap/<repo>/.github/workflows/deploy.yml@main`.
+- `orders`, `billing`, `stock` e `orchestrator` entram como jobs (com `needs: database`) quando
+  tiverem o `deploy.yml` com `workflow_call`; o `auth` passa a esperar o `orders`.
+
+**Pré-requisitos na organização GitHub**
+
+1. Secrets no nível da organização, liberados para os repositórios do projeto:
+   `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_SESSION_TOKEN`, `AWS_ACCOUNT_ID`,
+   `GRAFANA_ADMIN_PASSWORD`, `DB_PASSWORD`, `AUTH_DB_PASSWORD`, `DATABASE_PASSWORD`,
+   `TOKEN_SIGNING_KEY`, `LAB_ROLE_ARN`, `SMOKE_TEST_CPF`, `SMOKE_TEST_PASSWORD`
+   (`TF_STATE_BUCKET` é opcional: sem ele o `auth` usa `mechanical-hub-tfstate-<AWS_ACCOUNT_ID>`,
+   o mesmo bucket de `infra` e `database`).
+2. Em cada repositório chamado (`mechanical-hub-database`, `mechanical-hub-auth`): Settings →
+   Actions → General → Access → permitir uso por workflows de outros repositórios da organização
+   (necessário se forem privados).
+
+**Credenciais do Lab:** ao expirar a sessão (~4 h), atualize `AWS_ACCESS_KEY_ID`,
+`AWS_SECRET_ACCESS_KEY`, `AWS_SESSION_TOKEN` e `AWS_ACCOUNT_ID` **uma única vez**, nos secrets da
+organização, e dispare *Deploy completo* de novo.
+
+**Destruir o ambiente:** ainda é manual (`terraform destroy` em `auth`, `database` e `infra`, nessa
+ordem, e depois os recursos que o Lab não apaga sozinho); não há `destroy-all.yml`.
+
 ## Ordem de provisionamento (ambiente zerado)
 
-1. Credenciais do Lab atualizadas nos secrets dos repositórios.
+> A ordem abaixo é executada automaticamente pelo **Deploy completo** (seção anterior).
+
+1. Credenciais do Lab atualizadas nos secrets da organização.
 2. **`mechanical-hub-infra`** (este): VPC, EKS (3 × `t3.large`, driver EBS CSI),
    ECR, filas SQS, NLB e observabilidade — um único `apply`.
 3. `mechanical-hub-database`: PostgreSQL dos 3 serviços SQL e MongoDB (lê
@@ -393,7 +438,8 @@ terraform test -test-directory=tests/integration -filter=tests/integration/sqs_i
   push para `main`.
 - **Deploy** (`deploy.yml`) — `init` com backend S3, `validate`, `plan`, `apply`
   e publicação dos outputs do contrato (mapas em JSON) como outputs do job e no
-  step summary.
+  step summary. Gatilhos: `workflow_call` (pipeline única) e manual; não roda mais no push.
+- **Deploy completo** (`deploy-all.yml`) — pipeline única, ver a seção acima.
 
 Secrets esperados: `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`,
 `AWS_SESSION_TOKEN`, `AWS_ACCOUNT_ID`, `GRAFANA_ADMIN_PASSWORD`.
