@@ -311,7 +311,8 @@ infra → database → [orders, billing, stock, orchestrator] (paralelo) → aut
 | --- | --- | --- |
 | `environment` | `production` (padrão), `staging` | Repassado a `infra` e `database` |
 | `ate_etapa` | `infra`, `database`, `auth` (padrão) | Última etapa executada; as seguintes são puladas |
-| `criar_usuarios_e_role` | `false` (padrão) | Cria a role de banco da autenticação no `database` (só depois das migrations V18..V20 do orders) |
+| `mongodb_persistencia` | `true` (padrão) | MongoDB em PVC (EBS gp3); desmarque se o driver EBS CSI não funcionar no Lab (cai para `emptyDir`) |
+| `criar_usuarios_e_role` | `false` (padrão) | No `database`, cria os usuários dos 3 serviços e a role de autenticação. Necessário no primeiro deploy e a cada recriação dos RDS, antes de subir os serviços |
 
 - Se uma etapa falha ou é cancelada, as seguintes **não** rodam.
 - `concurrency: deploy-all` (sem cancelamento) impede dois deploys completos ao mesmo tempo.
@@ -325,8 +326,9 @@ infra → database → [orders, billing, stock, orchestrator] (paralelo) → aut
 
 1. Secrets no nível da organização, liberados para os repositórios do projeto:
    `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_SESSION_TOKEN`, `AWS_ACCOUNT_ID`,
-   `GRAFANA_ADMIN_PASSWORD`, `DB_PASSWORD`, `AUTH_DB_PASSWORD`, `DATABASE_PASSWORD`,
-   `TOKEN_SIGNING_KEY`, `LAB_ROLE_ARN`, `SMOKE_TEST_CPF`, `SMOKE_TEST_PASSWORD`
+   `GRAFANA_ADMIN_PASSWORD`, `DB_PASSWORD_ORDERS`, `DB_PASSWORD_STOCK`, `DB_PASSWORD_BILLING`,
+   `ORDERS_DB_APP_PASSWORD`, `STOCK_DB_APP_PASSWORD`, `BILLING_DB_APP_PASSWORD`, `AUTH_DB_PASSWORD`,
+   `DATABASE_PASSWORD` (mesmo valor de `AUTH_DB_PASSWORD`), `TOKEN_SIGNING_KEY`, `LAB_ROLE_ARN`, `SMOKE_TEST_CPF`, `SMOKE_TEST_PASSWORD`
    (`TF_STATE_BUCKET` é opcional: sem ele o `auth` usa `mechanical-hub-tfstate-<AWS_ACCOUNT_ID>`,
    o mesmo bucket de `infra` e `database`).
 2. Em cada repositório chamado (`mechanical-hub-database`, `mechanical-hub-auth`): Settings →
