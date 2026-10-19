@@ -25,11 +25,18 @@ on:
         default: auth
         type: choice
         options: [infra, database, auth]
+      mongodb_persistencia:
+        description: >-
+          MongoDB em PVC (EBS gp3). Desmarque se o driver EBS CSI nao
+          funcionar no Lab — cai para emptyDir.
+        required: false
+        default: true
+        type: boolean
       criar_usuarios_e_role:
         description: >-
-          Criar a role de banco da autenticacao (sql/auth-database-role.sql).
-          So marque depois que as migrations Flyway V18..V20 do orders tiverem
-          rodado.
+          Criar os usuarios dos servicos (sql/service-user.sql) e a role de
+          autenticacao (sql/auth-database-role.sql). Necessario no primeiro
+          deploy e a cada recriacao dos RDS, antes do deploy dos servicos.
         required: false
         default: false
         type: boolean
@@ -56,7 +63,8 @@ jobs:
     uses: mechanical-hub-fiap/mechanical-hub-database/.github/workflows/deploy.yml@main
     with:
       environment: ${{ inputs.environment }}
-      criar_role_de_autenticacao: ${{ inputs.criar_usuarios_e_role }}
+      mongodb_persistencia: ${{ inputs.mongodb_persistencia }}
+      criar_usuarios_e_role: ${{ inputs.criar_usuarios_e_role }}
     secrets: inherit
 
   # --- Microsservicos (Fase F) -------------------------------------------------
