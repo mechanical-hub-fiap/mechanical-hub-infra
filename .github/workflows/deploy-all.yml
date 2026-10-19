@@ -1,0 +1,83 @@
+name: Deploy completo
+
+# Pipeline unica: provisiona e publica todo o Mechanical Hub no AWS Lab, na
+# ordem correta, com um unico disparo (Actions -> Deploy completo -> Run workflow).
+#
+#   infra -> database -> [orders, billing, stock, orchestrator] -> auth
+#
+# Cada etapa e o `deploy.yml` do respectivo repositorio, chamado como reusable
+# workflow. Os repositorios chamados precisam permitir o uso por outros repos
+# da organizacao (Settings -> Actions -> General -> Access) e os secrets ficam
+# no nivel da organizacao, repassados por `secrets: inherit`.
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: Ambiente alvo
+        required: true
+        default: production
+        type: choice
+        options: [production, staging]
+      ate_etapa:
+        description: Ultima etapa a executar (as seguintes sao puladas)
+        required: true
+        default: auth
+        type: choice
+        options: [infra, database, auth]
+      criar_usuarios_e_role:
+        description: >-
+          Criar a role de banco da autenticacao (sql/auth-database-role.sql).
+          So marque depois que as migrations Flyway V18..V20 do orders tiverem
+          rodado.
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-all
+  cancel-in-progress: false
+
+jobs:
+  infra:
+    name: 1 - Infraestrutura base
+    uses: ./.github/workflows/deploy.yml
+    with:
+      environment: ${{ inputs.environment }}
+    secrets: inherit
+
+  database:
+    name: 2 - Banco de dados
+    needs: infra
+    if: inputs.ate_etapa == 'database' || inputs.ate_etapa == 'auth'
+    uses: mechanical-hub-fiap/mechanical-hub-database/.github/workflows/deploy.yml@main
+    with:
+      environment: ${{ inputs.environment }}
+      criar_role_de_autenticacao: ${{ inputs.criar_usuarios_e_role }}
+    secrets: inherit
+
+  # --- Microsservicos (Fase F) -------------------------------------------------
+  # Habilitar cada job quando o repositorio tiver o deploy.yml com workflow_call
+  # (build da imagem -> ECR -> kubectl apply). Todos dependem so do `database`
+  # e rodam em paralelo.
+  #
+  # orders:
+  #   name: 3 - orders
+  #   needs: database
+  #   if: inputs.ate_etapa == 'auth'
+  #   uses: mechanical-hub-fiap/mechanical-hub-orders/.github/workflows/deploy.yml@main
+  #   with: { environment: "${{ inputs.environment }}" }
+  #   secrets: inherit
+  # billing, stock, orchestrator: mesmo formato, trocando o repositorio.
+
+  auth:
+    name: 4 - Autenticacao (Lambda + API Gateway)
+    # Quando os microsservicos entrarem: needs: [database, orders, billing, stock, orchestrator]
+    # (a Lambda le o banco do orders e usa o app_backend_base_url).
+    needs: database
+    if: inputs.ate_etapa == 'auth'
+    uses: mechanical-hub-fiap/mechanical-hub-auth/.github/workflows/deploy.yml@main
+    secrets: inherit

@@ -1,8 +1,26 @@
 name: Deploy
 
 on:
-  push:
-    branches: [main]
+  # Sem `push`: o deploy e disparado pela pipeline unica (deploy-all.yml) ou
+  # manualmente em Actions -> Deploy -> Run workflow.
+  workflow_call:
+    inputs:
+      environment:
+        description: Ambiente alvo
+        required: false
+        default: production
+        type: string
+    secrets:
+      AWS_ACCESS_KEY_ID:
+        required: true
+      AWS_SECRET_ACCESS_KEY:
+        required: true
+      AWS_SESSION_TOKEN:
+        required: true
+      AWS_ACCOUNT_ID:
+        required: true
+      GRAFANA_ADMIN_PASSWORD:
+        required: true
   workflow_dispatch:
     inputs:
       environment:
@@ -16,7 +34,9 @@ permissions:
   contents: read
 
 concurrency:
-  group: deploy-${{ github.ref }}
+  # Nome proprio por workflow: grupos de concurrency sao do repositorio
+  # chamador, entao um nome generico colidiria com os outros deploys chamados.
+  group: deploy-infra-${{ github.ref }}
   cancel-in-progress: false
 
 env:
@@ -85,7 +105,7 @@ jobs:
         run: |
           BUCKET="mechanical-hub-tfstate-${{ secrets.AWS_ACCOUNT_ID }}"
           echo "bucket=${BUCKET}" >> $GITHUB_OUTPUT
-          echo "environment=${{ github.event.inputs.environment || 'production' }}" >> $GITHUB_OUTPUT
+          echo "environment=${{ inputs.environment || 'production' }}" >> $GITHUB_OUTPUT
 
       - name: Garantir bucket de state
         run: |
