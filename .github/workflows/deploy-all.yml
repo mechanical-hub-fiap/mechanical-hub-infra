@@ -70,9 +70,8 @@ jobs:
   # --- Microsservicos (Fase F) -------------------------------------------------
   # Cada um e o deploy.yml do repositorio (build -> ECR -> kubectl apply), chamado
   # com workflow_call. Dependem so do `database` e rodam em paralelo.
-  # PENDENTE: stock (codigo ainda fora da main, sem pipeline). Quando tiver
-  # deploy.yml com workflow_call, copiar o bloco abaixo e acrescentar o job ao
-  # `needs` do auth.
+  # Um microsservico novo: copiar um bloco abaixo e acrescentar o job ao `needs`
+  # do auth.
 
   orders:
     name: 3 - orders
@@ -88,6 +87,13 @@ jobs:
     uses: mechanical-hub-fiap/mechanical-hub-billing/.github/workflows/deploy.yml@main
     secrets: inherit
 
+  stock:
+    name: 3 - stock
+    needs: database
+    if: inputs.ate_etapa == 'auth'
+    uses: mechanical-hub-fiap/mechanical-hub-stock/.github/workflows/deploy.yml@main
+    secrets: inherit
+
   orchestrator:
     name: 3 - orchestrator
     # Le o MongoDB e o Secret do usuario dele, criados pelo database.
@@ -99,8 +105,8 @@ jobs:
   auth:
     name: 4 - Autenticacao (Lambda + API Gateway)
     # A Lambda le o banco do orders (tabelas criadas pelas migrations dele) e o smoke
-    # test exercita orders e billing. Acrescentar stock quando entrar.
-    needs: [database, orders, billing, orchestrator]
+    # test exercita orders e billing; stock e orchestrator completam o fluxo da saga.
+    needs: [database, orders, billing, stock, orchestrator]
     if: inputs.ate_etapa == 'auth'
     uses: mechanical-hub-fiap/mechanical-hub-auth/.github/workflows/deploy.yml@main
     secrets: inherit
