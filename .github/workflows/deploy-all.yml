@@ -68,24 +68,39 @@ jobs:
     secrets: inherit
 
   # --- Microsservicos (Fase F) -------------------------------------------------
-  # Habilitar cada job quando o repositorio tiver o deploy.yml com workflow_call
-  # (build da imagem -> ECR -> kubectl apply). Todos dependem so do `database`
-  # e rodam em paralelo.
-  #
-  # orders:
-  #   name: 3 - orders
-  #   needs: database
-  #   if: inputs.ate_etapa == 'auth'
-  #   uses: mechanical-hub-fiap/mechanical-hub-orders/.github/workflows/deploy.yml@main
-  #   with: { environment: "${{ inputs.environment }}" }
-  #   secrets: inherit
-  # billing, stock, orchestrator: mesmo formato, trocando o repositorio.
+  # Cada um e o deploy.yml do repositorio (build -> ECR -> kubectl apply), chamado
+  # com workflow_call. Dependem so do `database` e rodam em paralelo.
+  # PENDENTE: stock (codigo ainda fora da main, sem pipeline). Quando tiver
+  # deploy.yml com workflow_call, copiar o bloco abaixo e acrescentar o job ao
+  # `needs` do auth.
+
+  orders:
+    name: 3 - orders
+    needs: database
+    if: inputs.ate_etapa == 'auth'
+    uses: mechanical-hub-fiap/mechanical-hub-orders/.github/workflows/deploy.yml@main
+    secrets: inherit
+
+  billing:
+    name: 3 - billing
+    needs: database
+    if: inputs.ate_etapa == 'auth'
+    uses: mechanical-hub-fiap/mechanical-hub-billing/.github/workflows/deploy.yml@main
+    secrets: inherit
+
+  orchestrator:
+    name: 3 - orchestrator
+    # Le o MongoDB e o Secret do usuario dele, criados pelo database.
+    needs: database
+    if: inputs.ate_etapa == 'auth'
+    uses: mechanical-hub-fiap/mechanical-hub-orchestrator/.github/workflows/deploy.yml@main
+    secrets: inherit
 
   auth:
     name: 4 - Autenticacao (Lambda + API Gateway)
-    # Quando os microsservicos entrarem: needs: [database, orders, billing, stock, orchestrator]
-    # (a Lambda le o banco do orders e usa o app_backend_base_url).
-    needs: database
+    # A Lambda le o banco do orders (tabelas criadas pelas migrations dele) e o smoke
+    # test exercita orders e billing. Acrescentar stock quando entrar.
+    needs: [database, orders, billing, orchestrator]
     if: inputs.ate_etapa == 'auth'
     uses: mechanical-hub-fiap/mechanical-hub-auth/.github/workflows/deploy.yml@main
     secrets: inherit
